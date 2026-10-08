@@ -267,3 +267,4 @@ Ditambah **validasi input** (`quickValidate`) dan **rate limiting** di
 ## 📄 Lisensi
 
 MIT — bebas dipakai dan dimodifikasi.
+"# AI-Task-Breaker" 
