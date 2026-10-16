@@ -3,8 +3,8 @@ import express from 'express';
 import cors from 'cors';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { breakDownTask } from './deepseek.js';
-import { quickValidate } from './prompt.js';
+import { breakDownTask, breakDownSubStep } from './deepseek.js';
+import { quickValidate, quickValidateStep } from './prompt.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -65,6 +65,32 @@ app.post('/api/breakdown', rateLimit, async (req, res) => {
   }
 });
 
+app.post('/api/breakdown/sub', rateLimit, async (req, res) => {
+  const task = (req.body?.task ?? '').toString().trim();
+  const step = (req.body?.step ?? '').toString().trim();
+  const prevStep = (req.body?.prevStep ?? '').toString().trim();
+  const check = quickValidateStep(task, step);
+  if (!check.ok) {
+    return res.status(400).json({ error: check.message });
+  }
+
+  try {
+    const result = await breakDownSubStep(check.task, check.step, prevStep.slice(0, 300));
+    return res.json(result);
+  } catch (err) {
+    const status = err.status || 500;
+    if (status >= 500) {
+      console.error('[breakdown/sub]', err.message, err.detail ?? '');
+    }
+    return res.status(status).json({
+      error:
+        status === 401
+          ? 'API key AI tidak valid. Periksa konfigurasi server.'
+          : err.message || 'Terjadi kesalahan. Coba lagi, ya.',
+    });
+  }
+});
+
 // Serve hasil build frontend (production / Hugging Face Spaces).
 const distDir = path.join(__dirname, '..', 'dist');
 app.use(express.static(distDir));
@@ -76,5 +102,5 @@ app.get('*', (req, res, next) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`AI Task Breaker server jalan di http://0.0.0.0:${PORT}`);
+  console.log(`Pacefuly server jalan di http://127.0.0.1:${PORT}`);
 });

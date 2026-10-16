@@ -1,4 +1,4 @@
-import { SYSTEM_PROMPT, buildUserMessage } from './prompt.js';
+import { SYSTEM_PROMPT, SUB_SYSTEM_PROMPT, buildUserMessage, buildSubUserMessage } from './prompt.js';
 
 // Mendukung OpenRouter (default) maupun DeepSeek langsung.
 // Nama env lama (DEEPSEEK_*) tetap didukung agar tidak breaking.
@@ -16,6 +16,23 @@ const API_KEY = process.env.AI_API_KEY || process.env.DEEPSEEK_API_KEY;
  * @returns {Promise<object>} objek hasil yang sudah diparse
  */
 export async function breakDownTask(task) {
+  return runCompletion(SYSTEM_PROMPT, buildUserMessage(task), normalize);
+}
+
+/**
+ * Pecah satu langkah menjadi sub-langkah yang lebih kecil dan spesifik.
+ * @param {string} task - tugas besar asli (konteks)
+ * @param {string} stepTitle - judul langkah yang mau dipecah
+ */
+export async function breakDownSubStep(task, stepTitle, prevStepTitle) {
+  return runCompletion(
+    SUB_SYSTEM_PROMPT,
+    buildSubUserMessage(task, stepTitle, prevStepTitle),
+    normalizeSub
+  );
+}
+
+async function runCompletion(systemPrompt, userMessage, normalizeFn) {
   if (!API_KEY) {
     const err = new Error('AI_API_KEY belum diatur di environment.');
     err.status = 500;
@@ -24,7 +41,7 @@ export async function breakDownTask(task) {
 
   let res;
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
-    res = await requestCompletion(task);
+    res = await requestCompletion(systemPrompt, userMessage);
     // 429 (rate limit upstream) dan 5xx biasanya sementara, jadi coba lagi
     // sebelum menyerah ke pengguna.
     const retryable = res.status === 429 || res.status >= 500;
@@ -52,7 +69,7 @@ export async function breakDownTask(task) {
     throw err;
   }
 
-  return normalize(parseJson(content));
+  return normalizeFn(parseJson(content));
 }
 
 const MAX_ATTEMPTS = 3;
@@ -63,7 +80,7 @@ function sleep(ms) {
 }
 
 /** Satu percobaan request ke provider AI (dengan timeout sendiri). */
-async function requestCompletion(task) {
+async function requestCompletion(systemPrompt, userMessage) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 45_000);
 
@@ -75,13 +92,13 @@ async function requestCompletion(task) {
         Authorization: `Bearer ${API_KEY}`,
         // Header opsional yang direkomendasikan OpenRouter untuk atribusi.
         'HTTP-Referer': process.env.APP_URL || 'http://localhost:7860',
-        'X-Title': 'AI Task Breaker',
+        'X-Title': 'Pacefuly',
       },
       body: JSON.stringify({
         model: MODEL,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: buildUserMessage(task) },
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
         ],
         temperature: 0.4,
         max_tokens: 1200,
@@ -171,4 +188,42 @@ function clampDuration(value) {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n) || n <= 0) return 5;
   return Math.min(15, Math.max(2, n));
+}
+
+/**
+ * Normalisasi hasil pemecahan sub-langkah.
+ */
+function normalizeSub(obj) {
+  if (obj && obj.allowed === false) {
+    return {
+      allowed: false,
+      reason:
+        obj.reason ||
+        'Langkah ini tidak bisa dipecah lebih kecil. Coba kerjakan langsung, ya.',
+    };
+  }
+
+  const subSteps = Array.isArray(obj?.subSteps) ? obj.subSteps : [];
+  const clean = subSteps
+    .map((s) => ({
+      title: String(s?.title ?? '').trim(),
+      duration: clampSubDuration(s?.duration),
+    }))
+    .filter((s) => s.title.length > 0)
+    .slice(0, 4);
+
+  if (clean.length === 0) {
+    return {
+      allowed: false,
+      reason: 'Aku belum bisa memecah langkah ini. Coba kerjakan langsung, ya.',
+    };
+  }
+
+  return { allowed: true, subSteps: clean };
+}
+
+function clampSubDuration(value) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n <= 0) return 3;
+  return Math.min(5, Math.max(1, n));
 }

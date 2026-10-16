@@ -5,3 +5,6 @@ dist
 *.log
 .DS_Store
 .vscode
+
+# Aset hasil ekstraksi dari image/Landing Page.svg (derived, bisa dibuat ulang)
+image/landing-extracted/

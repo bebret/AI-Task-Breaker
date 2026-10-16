@@ -58,11 +58,15 @@ provider. Cukup atur 3 variabel di `.env`:
 ### Opsi A — OpenRouter (disarankan, bisa akses banyak model)
 ```env
 AI_API_KEY=sk-or-v1-xxxxxxxxxxxxxxxx
-AI_MODEL=deepseek/deepseek-chat
+AI_MODEL=deepseek/deepseek-v4.1-flash
 AI_BASE_URL=https://openrouter.ai/api/v1
 ```
-Daftar model: <https://openrouter.ai/models> — mis. `deepseek/deepseek-chat`,
-`z-ai/glm-4.5`, `google/gemini-flash-1.5`.
+Daftar model: <https://openrouter.ai/models> — mis. `deepseek/deepseek-v4.1-flash`,
+`deepseek/deepseek-v4-flash`, `deepseek/deepseek-chat-v3.1`.
+
+> ⚠️ Kalau akun OpenRouter-mu membatasi provider (mis. hanya `relace` di
+> <https://openrouter.ai/settings/privacy>), pilih model yang memang dilayani
+> provider itu — kalau tidak, API mengembalikan error 404.
 
 ### Opsi B — DeepSeek langsung
 ```env

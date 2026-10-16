@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BackButton } from './BackButton.jsx';
 import { FoxMascot } from './FoxMascot.jsx';
+import { postJson } from '../api.js';
 
 const EXTRA_TIME_OPTIONS = [2, 5, 10];
 const RING_RADIUS = 54;
@@ -8,21 +9,38 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
 /**
  * Layar fokus: timer hitung mundur per langkah + checklist langkah selesai.
- * Timer berjalan untuk langkah aktif, dan otomatis pindah ke langkah
- * berikutnya yang belum selesai saat dicentang.
+ * Langkah aktif bisa langsung dipecah jadi sub-langkah (tanpa pindah layar),
+ * dan sub-langkahnya punya checkbox sendiri. Semua sub-langkah selesai ->
+ * langkah induk otomatis selesai dan lanjut ke langkah berikutnya.
  */
-export default function FocusScreen({ task, result, onBack, onRestart }) {
+export default function FocusScreen({ task, result, onBack, onRestart, focusState, onFocusStateChange, onSubSteps }) {
   const steps = useMemo(() => result?.steps ?? [], [result]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [done, setDone] = useState(() => steps.map(() => false));
-  const [remaining, setRemaining] = useState(() => (steps[0]?.duration ?? 5) * 60);
-  const [running, setRunning] = useState(true);
+
+  // State timer/checklist disimpan di App (focusState) supaya tidak hilang
+  // saat pengguna bolak-balik ke layar hasil.
+  const [currentIndex, setCurrentIndex] = useState(focusState?.currentIndex ?? 0);
+  const [done, setDone] = useState(() => focusState?.done ?? steps.map(() => false));
+  const [remaining, setRemaining] = useState(() => focusState?.remaining ?? (steps[0]?.duration ?? 5) * 60);
+  const [running, setRunning] = useState(focusState?.running ?? true);
   const [dialog, setDialog] = useState(null);
+
+  // Sub-langkah langkah aktif: daftar + status centang + status fetch.
+  const [subSteps, setSubSteps] = useState(null);
+  const [subDone, setSubDone] = useState([]);
+  const [subLoading, setSubLoading] = useState(false);
+  const [subError, setSubError] = useState('');
+
+  // Kirim perubahan state ke App setiap kali berubah.
+  useEffect(() => {
+    onFocusStateChange?.({ currentIndex, done, remaining, running });
+  }, [currentIndex, done, remaining, running, onFocusStateChange]);
 
   const total = steps.length;
   const completedCount = done.filter(Boolean).length;
   const allDone = total > 0 && completedCount === total;
   const currentStep = steps[currentIndex];
+  const subTotal = subSteps?.length ?? 0;
+  const subCompleted = subDone.filter(Boolean).length;
 
   // Hitung mundur satu detik selama timer berjalan.
   useEffect(() => {
@@ -45,6 +63,10 @@ export default function FocusScreen({ task, result, onBack, onRestart }) {
     setCurrentIndex(index);
     setRemaining((steps[index]?.duration ?? 5) * 60);
     setRunning(true);
+    // Reset panel sub-langkah untuk langkah baru.
+    setSubSteps(null);
+    setSubDone([]);
+    setSubError('');
   };
 
   const markDone = (index) => {
@@ -73,6 +95,55 @@ export default function FocusScreen({ task, result, onBack, onRestart }) {
     setRemaining((prev) => prev + minutes * 60);
     setDialog(null);
     setRunning(true);
+  };
+
+  /**
+   * Pecah langkah aktif jadi sub-langkah langsung dari layar fokus.
+   * Kalau langkah ini sudah punya sub-langkah (dipecah di layar hasil),
+   * pakai yang sudah ada.
+   */
+  const breakCurrentStep = async () => {
+    if (Array.isArray(currentStep?.subSteps) && currentStep.subSteps.length > 0) {
+      setSubSteps(currentStep.subSteps);
+      setSubDone(currentStep.subSteps.map(() => false));
+      return;
+    }
+    if (subLoading) return;
+    setSubLoading(true);
+    setSubError('');
+    try {
+      const prevStep = currentIndex > 0 ? steps[currentIndex - 1]?.title : undefined;
+      const data = await postJson('/api/breakdown/sub', {
+        task,
+        step: currentStep.title,
+        prevStep,
+      });
+      if (data.allowed === false) {
+        setSubError(data.reason || 'Langkah ini tidak bisa dipecah lebih kecil.');
+      } else {
+        const subs = data.subSteps ?? [];
+        setSubSteps(subs);
+        setSubDone(subs.map(() => false));
+        onSubSteps?.(currentIndex, subs);
+      }
+    } catch (e) {
+      setSubError(e.message || 'Gagal memecah langkah. Coba lagi, ya.');
+    } finally {
+      setSubLoading(false);
+    }
+  };
+
+  /**
+   * Centang satu sub-langkah. Kalau semua sub-langkah selesai, langkah
+   * induk otomatis ditandai selesai dan lanjut ke langkah berikutnya.
+   */
+  const toggleSub = (j) => {
+    const next = subDone.map((v, i) => (i === j ? !v : v));
+    setSubDone(next);
+    if (next.every(Boolean) && next.length > 0) {
+      // Semua sub-langkah selesai -> selesaikan langkah induk.
+      markDone(currentIndex);
+    }
   };
 
   if (allDone) {
@@ -105,6 +176,7 @@ export default function FocusScreen({ task, result, onBack, onRestart }) {
   const progress = total > 0 ? completedCount / total : 0;
   const ringOffset = RING_CIRCUMFERENCE * (1 - progress);
   const isTimeUp = remaining === 0;
+  const hasSubs = subSteps !== null && subSteps.length > 0;
 
   return (
     <div className="screen focus-screen">
@@ -174,6 +246,75 @@ export default function FocusScreen({ task, result, onBack, onRestart }) {
           </div>
         </div>
 
+        {/* Panel pecah langkah aktif jadi sub-langkah, langsung di sini. */}
+        <div className="focus-subpanel">
+          {!hasSubs && !subLoading && !subError && (
+            <button type="button" className="btn-ghost focus-sub-break" onClick={breakCurrentStep}>
+              🔪 Pecah Step Ini Jadi Lebih Kecil
+            </button>
+          )}
+
+          {subLoading && (
+            <div className="substeps-loading">
+              <span className="dot" />
+              <span className="dot" />
+              <span className="dot" />
+            </div>
+          )}
+
+          {subError && (
+            <div className="substeps-error">
+              <p>{subError}</p>
+              <button type="button" className="substeps-retry" onClick={breakCurrentStep}>
+                Coba Lagi
+              </button>
+            </div>
+          )}
+
+          {hasSubs && !subLoading && (
+            <>
+              <div className="focus-sub-head">
+                <span className="focus-sub-label">Sub-langkah Step {currentIndex + 1}</span>
+                <span className="focus-sub-count">{subCompleted}/{subTotal}</span>
+              </div>
+              <ul className="focus-substeps">
+                {subSteps.map((sub, j) => (
+                  <li className={`focus-substep ${subDone[j] ? 'done' : ''}`} key={j}>
+                    <button
+                      type="button"
+                      className="check-box"
+                      onClick={() => toggleSub(j)}
+                      aria-pressed={subDone[j]}
+                      aria-label={`Tandai sub-langkah ${j + 1} ${subDone[j] ? 'belum selesai' : 'selesai'}`}
+                    >
+                      {subDone[j] && (
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <path
+                            d="M5 13l4 4L19 7"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                    </button>
+                    <div className="substep-content">
+                      <p className="substep-title">{sub.title}</p>
+                      <p className="substep-duration">{sub.duration} Menit</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              {subCompleted < subTotal && (
+                <p className="focus-sub-hint">
+                  Selesaikan semua sub-langkah untuk lanjut ke step berikutnya.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+
         <div className="checklist-head">
           <h3 className="checklist-title">Checklist Langkah</h3>
           <span className="checklist-count">
@@ -213,6 +354,19 @@ export default function FocusScreen({ task, result, onBack, onRestart }) {
                     Step {i + 1}: {step.title}
                   </p>
                   <p className="check-duration">{step.duration} Menit</p>
+                  {Array.isArray(step.subSteps) && step.subSteps.length > 0 && (
+                    <ul className="check-substeps">
+                      {step.subSteps.map((sub, j) => (
+                        <li className="check-substep" key={j}>
+                          <span className="check-substep-dot" aria-hidden="true" />
+                          <span className="check-substep-text">
+                            {sub.title}
+                            <span className="check-substep-duration"> · {sub.duration} mnt</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
                 {isActive && <span className="check-badge">Sekarang</span>}
               </li>

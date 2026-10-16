@@ -72,7 +72,7 @@ export default function InputScreen({ initialTask, autoListen, onBack, onResult 
     <div className="screen input-screen">
       <header className="topbar">
         <BackButton onClick={onBack} />
-        <h2 className="topbar-title">AI Task Breaker</h2>
+        <h2 className="topbar-title">Pacefuly</h2>
         <span className="topbar-spacer" />
       </header>
 

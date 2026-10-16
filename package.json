@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "AI Task Breaker - memecah tugas besar menjadi langkah mikro agar mudah dimulai.",
+  "description": "Pacefuly - memecah tugas besar menjadi langkah mikro agar mudah dimulai.",
   "scripts": {
     "dev": "concurrently -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "node --watch server/index.js",
