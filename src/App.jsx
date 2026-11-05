@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import SplashScreen from './components/SplashScreen.jsx';
+import AuthScreen from './components/AuthScreen.jsx';
 import LandingScreen from './components/LandingScreen.jsx';
 import DashboardScreen from './components/DashboardScreen.jsx';
 import InputScreen from './components/InputScreen.jsx';
@@ -7,25 +8,25 @@ import ResultScreen from './components/ResultScreen.jsx';
 import FocusScreen from './components/FocusScreen.jsx';
 import FocusSetupScreen from './components/FocusSetupScreen.jsx';
 import FocusTimerScreen from './components/FocusTimerScreen.jsx';
+import { getUser, saveUser, clearUser } from './auth.js';
 
 /**
- * Alur aplikasi (tanpa login, biar gampang didemokan):
+ * Alur aplikasi:
  *  1. splash       -> logo + maskot (2 detik)
- *  2. dashboard    -> hub fitur: Task Breaker atau Mode Fokus
- *  3. landing      -> pengantar Task Breaker + tombol "Mulai Pecah Tugas"
- *  4. input        -> pengguna menulis tugas mentah
- *  5. result       -> daftar langkah mikro dari AI (dropdown sub-langkah)
- *  6. focus        -> timer per langkah + checklist + pecah sub-langkah
+ *  2. login/regis  -> masuk atau daftar akun (demo, disimpan di localStorage)
+ *  3. dashboard    -> hub fitur: Task Breaker atau Mode Fokus
+ *  4. landing      -> pengantar Task Breaker + tombol "Mulai Pecah Tugas"
+ *  5. input        -> pengguna menulis tugas mentah
+ *  6. result       -> daftar langkah mikro dari AI (dropdown sub-langkah)
+ *  7. focus        -> timer per langkah + checklist + pecah sub-langkah
  *
  * Mode fokus mandiri (tanpa pecah tugas):
- *  7. focus-setup  -> pilih suara latar + durasi
- *  8. focus-timer  -> timer dengan background sesuai suara, bisa dijeda
- *
- * Layar login/register & beranda lama masih ada di src/components
- * (AuthScreen.jsx, HomeScreen.jsx) kalau nanti mau dipakai lagi.
+ *  8. focus-setup  -> pilih suara latar + durasi
+ *  9. focus-timer  -> timer dengan background sesuai suara, bisa dijeda
  */
 export default function App() {
   const [screen, setScreen] = useState('splash');
+  const [user, setUser] = useState(getUser);
   const [task, setTask] = useState('');
   const [result, setResult] = useState(null);
   const [autoListen, setAutoListen] = useState(false);
@@ -35,6 +36,28 @@ export default function App() {
   const [focusMode, setFocusMode] = useState({ sound: 'rain', minutes: 25 });
 
   const finishSplash = () => {
+    setScreen(user ? 'dashboard' : 'login');
+  };
+
+  const handleAuthSuccess = (nextUser) => {
+    saveUser(nextUser);
+    setUser(nextUser);
+    setScreen('dashboard');
+  };
+
+  const handleLogout = () => {
+    clearUser();
+    setUser(null);
+    setResult(null);
+    setTask('');
+    setScreen('login');
+  };
+
+  // Mode tamu untuk demo: tidak disimpan, jadi refresh kembali ke login.
+  const handleGuest = () => {
+    setUser({ name: 'Tamu', guest: true });
+    setResult(null);
+    setTask('');
     setScreen('dashboard');
   };
 
@@ -81,13 +104,33 @@ export default function App() {
     <div className="app-shell">
       <div className="phone">
         {screen === 'splash' && <SplashScreen onFinish={finishSplash} />}
+        {screen === 'login' && (
+          <AuthScreen
+            mode="login"
+            onBack={() => setScreen('splash')}
+            onSwitch={() => setScreen('register')}
+            onSuccess={handleAuthSuccess}
+            onGuest={handleGuest}
+          />
+        )}
+        {screen === 'register' && (
+          <AuthScreen
+            mode="register"
+            onBack={() => setScreen('login')}
+            onSwitch={() => setScreen('login')}
+            onSuccess={handleAuthSuccess}
+            onGuest={handleGuest}
+          />
+        )}
         {screen === 'landing' && (
           <LandingScreen
             onStart={() => goInput(false)}
             onBack={() => setScreen('dashboard')}
           />
         )}
-        {screen === 'dashboard' && <DashboardScreen onSelect={handleFeature} />}
+        {screen === 'dashboard' && (
+          <DashboardScreen user={user} onSelect={handleFeature} onLogout={handleLogout} />
+        )}
         {screen === 'input' && (
           <InputScreen
             initialTask={task}

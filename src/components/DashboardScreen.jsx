@@ -44,7 +44,9 @@ const FEATURES = [
 /**
  * Dashboard: hub fitur. Pengguna pilih mau pecah tugas atau mode fokus.
  */
-export default function DashboardScreen({ onSelect }) {
+export default function DashboardScreen({ user, onSelect, onLogout }) {
+  const firstName = (user?.name || '').split(' ')[0];
+
   return (
     <div className="screen dashboard">
       <header className="dashboard-top">
@@ -52,7 +54,30 @@ export default function DashboardScreen({ onSelect }) {
           <span className="dashboard-brand-dot" aria-hidden="true" />
           Pacefuly
         </div>
-        <span className="dashboard-pill">Hai! 👋</span>
+        <div className="dashboard-user">
+          <span className="dashboard-pill">
+            {firstName ? `Hai, ${firstName}! 👋` : 'Hai! 👋'}
+          </span>
+          {onLogout && (
+            <button
+              type="button"
+              className="dashboard-logout"
+              onClick={onLogout}
+              aria-label="Keluar"
+              title="Keluar"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M9 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3M15 8l4 4-4 4M19 12H9"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          )}
+        </div>
       </header>
 
       <div className="dashboard-body">
